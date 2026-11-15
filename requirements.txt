@@ -1,0 +1,4 @@
+gradio>=5.0
+langchain-core>=0.3
+numpy
+requests
