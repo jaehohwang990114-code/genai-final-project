@@ -1,17 +1,21 @@
 """Gradio 웹 데모 — 왼쪽 상담, 오른쪽 실행 로그 (어떤 도구를 불렀는지 시연 때 보여 주기).
 
 실행: python app.py            → http://localhost:7860
-      python app.py --share    → 임시 공개 주소 (시연 끝나면 반드시 종료)
+      python app.py --lock     → 비밀번호 잠금만 (share.bat 이 Cloudflare 터널로 인터넷에 공개)
+      python app.py --share    → Gradio 공개 주소(*.gradio.live) + 비밀번호 잠금 (리눅스 서버용.
+                                 Windows 스마트 앱 컨트롤이 켜져 있으면 막힘)
 """
+import os
+import secrets
 import sys
 
 import gradio as gr
 import requests
 
 import config
+import ui_theme
 from agent import Conversation
 
-conv = Conversation()
 
 EXAMPLES = [
     # 정상
@@ -31,12 +35,14 @@ def server_status():
         tags = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=3).json()
         names = [m["name"] for m in tags.get("models", [])]
         ok = any(n.startswith(config.CHAT_MODEL) for n in names)
-        return f"Ollama 연결됨 · 모델 `{config.CHAT_MODEL}` {'✅' if ok else '❌ 없음 (ollama pull 필요)'}"
+        text = f"OLLAMA ONLINE · MODEL {config.CHAT_MODEL}" if ok else f"모델 {config.CHAT_MODEL} 없음 (ollama pull 필요)"
+        return ui_theme.status_html(ok, text)
     except Exception:
-        return f"❌ Ollama 서버({config.OLLAMA_URL})에 연결할 수 없습니다. `ollama serve` 를 먼저 실행하세요."
+        return ui_theme.status_html(False, f"Ollama 서버({config.OLLAMA_URL})에 연결할 수 없습니다. ollama serve 를 먼저 실행하세요.")
 
 
-def ui_send(message, chat_history):
+def ui_send(message, chat_history, conv):
+    """conv 는 접속한 사람마다 따로 있는 대화 기억 (gr.State). 여러 명이 동시에 써도 대화가 안 섞인다."""
     if not message.strip():
         return "", chat_history, gr.update()
     try:
@@ -48,30 +54,35 @@ def ui_send(message, chat_history):
     return "", chat_history, log
 
 
-def ui_clear():
+def ui_clear(conv):
     conv.clear()
     return [], ""
 
 
-with gr.Blocks(title="알바머니 도우미") as demo:
-    gr.Markdown("## 💸 알바머니 도우미 — 알바비 계산 + 적금 상품 안내\n"
-                "로컬 LLM(Ollama) · RAG 문서 검색 · 도구 호출 | 은행 상품은 **시연용 가상 데이터**이며 "
-                "법률·금융 자문이 아닌 정보 안내입니다. 개인정보는 입력하지 마세요.")
-    status = gr.Markdown(server_status())
-    with gr.Row():
-        with gr.Column(scale=3):
-            chatbot = gr.Chatbot(label="상담", height=460)
-            msg = gr.Textbox(label="질문", placeholder="예) 시급 10320원에 주 20시간 일하면 한 달에 얼마야?")
+with gr.Blocks(title="ALBA·MONEY — 알바머니 도우미") as demo:     # 디자인은 ui_theme.py (launch 에서 적용)
+    gr.HTML(ui_theme.HEADER_HTML)
+    status = gr.HTML(server_status())
+    conv_state = gr.State(Conversation())                  # 접속(세션)마다 복사본이 새로 생긴다
+    with gr.Row(equal_height=False):
+        with gr.Column(scale=3, elem_classes="hud-panel"):
+            gr.HTML('<div class="hud-panel-title">◆ COMM CHANNEL · 상담</div>')
+            chatbot = gr.Chatbot(label="상담", height=470, elem_id="chat", show_label=False,
+                                 placeholder="<div style='text-align:center;opacity:.7'>⟡ 알바비나 적금에 대해 물어보세요 ⟡</div>")
+            msg = gr.Textbox(label="질문", show_label=False, elem_id="prompt",
+                             placeholder="▸ 예) 시급 10320원에 주 20시간 일하면 한 달에 얼마야?")
             with gr.Row():
-                send = gr.Button("보내기", variant="primary")
-                clear = gr.Button("대화 초기화")
-            gr.Examples(EXAMPLES, inputs=msg, label="시연용 예시 (위 3개 정상 · 아래 4개 예외)")
-        with gr.Column(scale=2):
-            log_box = gr.Textbox(label="실행 로그 (Function Call / Parameters / Output)", lines=26)
+                send = gr.Button("TRANSMIT ▸ 보내기", variant="primary", elem_id="send-btn")
+                clear = gr.Button("RESET · 초기화", elem_id="clear-btn")
+            with gr.Group(elem_id="examples"):
+                gr.Examples(EXAMPLES, inputs=msg, label="시연용 예시 (위 3개 정상 · 아래 4개 예외)")
+        with gr.Column(scale=2, elem_classes="hud-panel"):
+            gr.HTML('<div class="hud-panel-title pink">◆ SYSTEM LOG · 도구 실행 기록</div>')
+            log_box = gr.Textbox(label="실행 로그", show_label=False, lines=28, elem_id="syslog",
+                                 placeholder="> awaiting input_\n> Function Call / Parameters / Output 가 여기 표시됩니다")
 
-    msg.submit(ui_send, [msg, chatbot], [msg, chatbot, log_box])
-    send.click(ui_send, [msg, chatbot], [msg, chatbot, log_box])
-    clear.click(ui_clear, None, [chatbot, log_box])
+    msg.submit(ui_send, [msg, chatbot, conv_state], [msg, chatbot, log_box])
+    send.click(ui_send, [msg, chatbot, conv_state], [msg, chatbot, log_box])
+    clear.click(ui_clear, conv_state, [chatbot, log_box])
 
 if __name__ == "__main__":
     try:                                                     # 모델을 GPU 에 미리 올려 첫 질문이 느리지 않게 (워밍업)
@@ -79,5 +90,18 @@ if __name__ == "__main__":
             "model": config.CHAT_MODEL, "messages": [{"role": "user", "content": "안녕"}], "stream": False})
     except requests.exceptions.RequestException:
         pass
-    demo.launch(server_name="0.0.0.0", share="--share" in sys.argv,
+    share = "--share" in sys.argv                            # Gradio 공개 주소 (리눅스 GPU 서버용)
+    auth = None
+    if share or "--lock" in sys.argv:                        # 공개 주소는 누구나 들어올 수 있으니 비밀번호로 잠근다
+        # share.bat 이 정해 준 비밀번호가 있으면 그걸, 없으면 새로 만든다 (코드·깃허브에 남지 않음)
+        password = os.environ.get("APP_PASSWORD") or secrets.token_urlsafe(6)
+        auth = ("alba", password)
+        print()
+        print("=" * 60)
+        print(f"  공개 주소 접속 정보 →  아이디: alba   비밀번호: {password}")
+        print("  (공개 주소 https://....gradio.live 는 아래에 표시됩니다)")
+        print("=" * 60)
+        print()
+    demo.launch(server_name="0.0.0.0", share=share, auth=auth,
+                theme=ui_theme.THEME, css=ui_theme.CSS, js=ui_theme.FORCE_DARK_JS, head=ui_theme.HEAD,
                 inbrowser="--open" in sys.argv)                # --open: 브라우저 자동으로 열기

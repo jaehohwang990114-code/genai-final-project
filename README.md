@@ -33,6 +33,13 @@ reference/         과제 안내 PDF, 3장 펑션 콜링 실습 노트북 (수�
 전용 모델 `alba-agent` = qwen3:14b + temperature 0 + 문맥 8192 (`ollama/Modelfile`). VRAM 16GB 기준.
 8GB GPU 라면 run.bat 실행 전에 `set CHAT_MODEL=qwen2.5:7b`.
 
+### 인터넷으로 공유하기 (휴대폰·팀원·교수님)
+**`share.bat`** 더블클릭 → 창에 아이디(`alba`)·비밀번호와 `https://....trycloudflare.com` 주소가 나온다.
+- Cloudflare 임시 터널을 쓴다 (계정 불필요, 처음 한 번 `winget install --id Cloudflare.cloudflared`).
+- 실행할 때마다 비밀번호가 새로 바뀌고 주소도 바뀐다. 창을 닫으면 주소가 사라진다.
+- 접속한 사람마다 대화 기억이 따로 관리된다 (`gr.State`).
+- Gradio 기본 공유(`--share`, *.gradio.live)는 Windows 스마트 앱 컨트롤이 켜진 PC에서 막혀서 이 방식을 쓴다.
+
 ## 실행 방법 (GPU 서버)
 ```bash
 ollama pull qwen3:14b
