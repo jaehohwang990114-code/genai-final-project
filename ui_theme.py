@@ -30,6 +30,7 @@ HEADER_HTML = """
   <div class="hud-sub">알바비 계산 <span>✦</span> 적금 상품 안내 <span>✦</span> 노동·금융 문서 검색</div>
   <div class="hud-chips">
     <span class="chip">RAG</span><span class="chip">TOOL CALLING</span>
+    <span class="chip">LANGGRAPH · MULTI-AGENT</span><span class="chip">MCP SERVER</span>
     <span class="chip">OLLAMA · LOCAL LLM</span><span class="chip">PII GUARD</span>
   </div>
   <div class="hud-note">은행 상품은 시연용 <b>가상 데이터</b> · 법률·금융 자문이 아닌 정보 안내 · 개인정보는 입력하지 마세요</div>

@@ -37,7 +37,7 @@ def server_status():
         tags = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=3).json()
         names = [m["name"] for m in tags.get("models", [])]
         ok = any(n.startswith(config.CHAT_MODEL) for n in names)
-        text = f"OLLAMA ONLINE · MODEL {config.CHAT_MODEL}" if ok else f"모델 {config.CHAT_MODEL} 없음 (ollama pull 필요)"
+        text = f"OLLAMA ONLINE · MODEL {config.CHAT_MODEL} · TOOLS VIA {config.TOOL_BACKEND.upper()}" if ok else f"모델 {config.CHAT_MODEL} 없음 (ollama pull 필요)"
         return ui_theme.status_html(ok, text)
     except Exception:
         return ui_theme.status_html(False, f"Ollama 서버({config.OLLAMA_URL})에 연결할 수 없습니다. ollama serve 를 먼저 실행하세요.")

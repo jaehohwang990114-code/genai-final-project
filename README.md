@@ -3,12 +3,13 @@
 아르바이트하는 대학생이 **"이번 달 알바비가 맞게 들어왔나?"**와 **"남는 돈을 어디에 모을까?"**를 혼자 확인할 수 있게 돕는 AI 에이전트.
 로컬 LLM(Ollama)이 질문을 보고 도구를 골라 실행하고, 안내 문서를 근거로 답한다.
 
-## 사용한 기술 (3개 + 멀티 에이전트)
+## 사용한 기술 (4개 + 멀티 에이전트)
 | 기술 | 프로젝트에서 하는 일 | 코드 |
 |---|---|---|
 | **RAG** | 주휴수당·최저임금·3.3% 세금·적금 기초·재무 관리·가상 상품 설명서·금융사기 문서를 검색해 답의 근거로 사용 | `rag.py`, `tools.search_guide` |
 | **도구 호출** | 알바비(기본급+주휴수당−3.3%), 예산(50/30/20), 적금 만기 계산, 조건에 맞는 적금 상품 비교 | `tools.py` |
 | **LangGraph** | 라우터가 질문을 💼 머니 코치 / 🏦 상품 매칭 에이전트로 분기, 상품 비교 전 **사람 확인(interrupt)** | `graph.py` |
+| **MCP (자체 서버)** | 도구 5개를 표준 MCP 서버로 제공 → 에이전트가 서버에서 도구 목록을 받아 실행. Claude 데스크톱 등 다른 앱에도 연결 가능 | `mcp_server.py`, `mcp_client.py` |
 
 **멀티 에이전트 흐름** (`graph.py`)
 ```
@@ -17,6 +18,12 @@ START → router ─┬─ 💼 머니 코치  (알바비·예산·재무 관리
                 └─ both: 머니 코치 → 상품 매칭
 각 에이전트: agent ⇄ tools  (상품 비교 요청이면 confirm ⏸ 사람 확인 후 실행)
 ```
+```
+에이전트(graph.py) ──list_tools / call_tool──▶ mcp_client.py ──stdio──▶ mcp_server.py ──▶ tools.py
+   판단·권한·검증·사람 확인                                            계산·검색만
+```
+`set TOOL_BACKEND=local` 이면 MCP 없이 tools.py 를 직접 부른다 (비교용). 다른 앱 연결: `docs/MCP_다른앱에서_쓰기.md`
+
 **코드로 막는 안전장치(가드)**: 담당자별 도구 권한 · 사용자가 말하지 않은 금액으로 계산 금지 · 문서 없이 설명하면 되돌림 ·
 근거 없는 금액이 답에 나오면 한 번 고치게 하고, 그래도 남으면 그 줄 삭제 · 개인정보 가림.
 `python app.py --single` 로 예전 단일 에이전트(`agent.py`)도 실행할 수 있다.
@@ -30,6 +37,8 @@ rag.py             문서 → 청크 → 임베딩(bge-m3) → 코사인 검색 
 tools.py           도구 5개 + 금액 검증 가드
 agent.py           단일 에이전트 루프, Ollama 호출, 개인정보 가림 (graph.py 가 부품으로 사용)
 graph.py           LangGraph 멀티 에이전트 (라우터 · 머니 코치 · 상품 매칭 · 사람 확인)
+mcp_server.py      MCP 서버 (FastMCP, stdio) — tools.py 를 표준 도구로 내보내는 '도구 창고'
+mcp_client.py      MCP 클라이언트 — 서버를 켜고 연결을 유지하며 list_tools / call_tool
 app.py             Gradio 화면 (왼쪽 상담 / 오른쪽 실행 로그 / 확인 버튼)
 ui_theme.py        SF 네온 디자인 (CSS·헤더)
 data/docs/*.md     RAG 문서 (공공 안내 자료를 팀이 정리 + 가상 상품 설명서)

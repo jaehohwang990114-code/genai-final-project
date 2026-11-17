@@ -6,6 +6,7 @@
 임베딩 모델(Ollama bge-m3)이 없으면 ③④ 대신 '글자 2개 묶음(바이그램) 겹침' 점수로 검색한다.
 → 서버에 임베딩 모델이 없어도 시연이 멈추지 않게 하기 위한 안전장치.
 """
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -53,8 +54,8 @@ class Retriever:
                 self.vectors = embed([f"{c['title']}\n{c['text']}" for c in self.chunks])
                 self.mode = f"embedding({config.EMBED_MODEL})"
             except Exception as e:                  # 서버·모델이 없으면 키워드 검색으로
-                print(f"[RAG] 임베딩 사용 불가 → 키워드 검색으로 대체합니다. ({e.__class__.__name__})")
-        print(f"[RAG] 청크 {len(self.chunks)}개 준비 완료, 검색 방식: {self.mode}")
+                print(f"[RAG] 임베딩 사용 불가 → 키워드 검색으로 대체합니다. ({e.__class__.__name__})", file=sys.stderr)
+        print(f"[RAG] 청크 {len(self.chunks)}개 준비 완료, 검색 방식: {self.mode}", file=sys.stderr)   # stderr: MCP 서버(stdio)의 통신을 방해하지 않게
 
     # ④ 검색 ────────────────────────────────────────────────────
     def search(self, query, top_k=config.TOP_K, min_score=None):

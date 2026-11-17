@@ -48,6 +48,14 @@ def test_compare_filters():
     assert "S01 첫월급 정기적금: 제외 (가입대상" in out
 
 
+def test_value_guards():
+    """사용자가 말하지 않은 시급·3.3% 공제로 계산하지 못하게 막는다."""
+    assert tools.check_user_values("calc_alba_pay", {"hourly_wage": 10320}, "한 달 알바비 얼마야?")
+    assert tools.check_user_values("calc_alba_pay", {"hourly_wage": 11000, "tax_33": True}, "시급 11000원에 주 18시간")
+    assert tools.check_user_values("calc_alba_pay", {"hourly_wage": 11000, "tax_33": True}, "시급 11000원, 3.3% 떼") is None
+    assert tools.check_user_values("calc_savings", {"monthly_amount": 100000}, "매달 10만원씩") is None
+
+
 def test_rag_keyword():
     r = Retriever(use_embedding=False)
     top = r.search("주휴수당 받으려면 몇 시간 일해야 해?")[0][1]

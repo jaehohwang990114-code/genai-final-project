@@ -38,6 +38,7 @@ echo [4/5] 전용 모델 alba-agent 만들기 (ollama\Modelfile)
 echo [5/5] 오프라인 테스트
 ".venv\Scripts\python.exe" tests\test_offline.py || goto :fail
 ".venv\Scripts\python.exe" tests\test_graph_offline.py || goto :fail
+".venv\Scripts\python.exe" tests\test_mcp_offline.py || goto :fail
 
 echo.
 echo ===== 설치 완료! 이제 run.bat 을 더블클릭하세요 =====

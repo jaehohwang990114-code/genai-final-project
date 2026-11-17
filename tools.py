@@ -233,6 +233,10 @@ MUST_BE_SAID = {"calc_alba_pay": ["hourly_wage"], "calc_savings": ["monthly_amou
 def check_user_values(name, args, user_text, tool_text=""):
     """금액 인자가 사용자 말(또는 앞선 도구 결과)에 있는 숫자인지 확인. 문제가 있으면 모델에게 돌려줄 문장."""
     said = amounts_in(user_text) | amounts_in(tool_text)
+    # 실제 테스트에서 발견: "시급 11000원에 주 18시간" 에 모델이 말하지도 않은 3.3% 공제(tax_33=true)를 넣었다
+    if name == "calc_alba_pay" and (args or {}).get("tax_33") and not _re.search(r"3\.3|떼|공제|프리랜서|사업소득", user_text):
+        return ("[실행 안 함] 사용자가 3.3% 공제를 말하지 않았습니다. tax_33 를 빼고(false) 다시 호출하세요. "
+                "공제 여부가 궁금하면 답에서 따로 안내하세요.")
     for key in MUST_BE_SAID.get(name, []):
         v = (args or {}).get(key)
         if v is None:

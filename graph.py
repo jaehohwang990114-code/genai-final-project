@@ -23,6 +23,28 @@ import agent
 import config
 import tools as T
 
+# ── 도구 창고 연결 ─────────────────────────────────────────────────
+# config.TOOL_BACKEND == "mcp"  : 도구를 MCP 서버(mcp_server.py)를 통해 목록 조회·실행 (기본)
+#                       "local": tools.py 함수를 직접 실행 (MCP 없이 비교·디버그용)
+LOCAL_TOOLS = {t.name: t for t in T.ALL_TOOLS}
+
+
+def tool_schemas(names):
+    """에이전트에게 줄 도구 설명서. MCP 면 서버가 알려 준 목록에서 이 담당자 몫만 고른다."""
+    if config.TOOL_BACKEND == "mcp":
+        from mcp_client import get_client
+        catalog = get_client().list_tools()
+        return [catalog[n] for n in names if n in catalog]
+    return [convert_to_openai_tool(LOCAL_TOOLS[n]) for n in names]
+
+
+def execute_tool(name, args):
+    """도구 실행. MCP 면 서버에 요청하고, local 이면 함수를 직접 부른다."""
+    if config.TOOL_BACKEND == "mcp":
+        from mcp_client import get_client
+        return get_client().call_tool(name, args)
+    return str(LOCAL_TOOLS[name].invoke(args))
+
 # ── 에이전트 정의 ───────────────────────────────────────────────────
 COMMON_RULES = f"""공통 규칙:
 - 숫자는 반드시 도구로 계산하고, 도구 결과의 숫자를 그대로 씁니다. 암산하지 않습니다.
@@ -41,7 +63,7 @@ AGENTS = {
                   "투자 종목 추천 같은 개인 맞춤 투자 조언은 하지 않습니다. "
                   "돈 관리·저축 방법·비상금 같은 질문은 반드시 search_guide 로 '재무 관리' 문서를 먼저 찾고 그 내용으로 답합니다. "
                   "수입 금액을 알려 주면 plan_budget 으로 실제 금액을 나눠 보여 줍니다.\n" + COMMON_RULES,
-        "tools": [T.calc_alba_pay, T.plan_budget, T.calc_savings, T.search_guide],
+        "tools": ["calc_alba_pay", "plan_budget", "calc_savings", "search_guide"],
     },
     "matcher": {
         "name": "🏦 상품 매칭",
@@ -50,7 +72,7 @@ AGENTS = {
                   "우대조건을 채우기 쉬운지)을 함께 설명하고, 최종 결정은 사용자가 한다고 말합니다. "
                   "모든 상품은 시연용 가상 상품임을 밝힙니다. 우대조건·중도해지 같은 설명은 search_guide 로 찾습니다. "
                   "앞 담당자(머니 코치)의 결과가 있으면 그 숫자(예: 저축 가능 금액)를 월 납입액으로 씁니다.\n" + COMMON_RULES,
-        "tools": [T.compare_savings_products, T.calc_savings, T.search_guide],
+        "tools": ["compare_savings_products", "calc_savings", "search_guide"],
     },
 }
 NEED_CONFIRM = {"compare_savings_products"}      # 실행 전에 사람 확인을 받는 도구
@@ -129,7 +151,7 @@ def _evidence(state):
 def agent_step(state: State):
     """③ 지금 에이전트가 한 번 생각한다: 도구 요청을 쓰거나 최종 답을 쓴다."""
     spec = AGENTS[state["active"]]
-    schemas = [convert_to_openai_tool(t) for t in spec["tools"]]
+    schemas = tool_schemas(spec["tools"])
     msg = agent._strip_think(agent.ollama_chat(state["messages"], tools=schemas))
     calls = agent.get_tool_calls(msg)
     content = msg.get("content") or ""
@@ -184,7 +206,7 @@ def confirm(state: State):
 
 def run_tools(state: State):
     """⑤ 도구 실행은 우리 코드가. 지금 에이전트에게 허락된 도구만 실행한다 (권한은 코드로)."""
-    allowed = {t.name: t for t in AGENTS[state["active"]]["tools"]}
+    allowed = set(AGENTS[state["active"]]["tools"])
     messages, log = list(state["messages"]), list(state["log"])
     # 값 지어내기 방지: 사용자가 한 말 + 지금까지의 도구 결과·앞 담당자 답에 있는 숫자만 금액으로 인정
     user_text = " ".join([state["question"]] + [m["content"] for m in state.get("history", []) if m["role"] == "user"])
@@ -199,10 +221,10 @@ def run_tools(state: State):
             result = problem
         else:
             try:
-                result = str(allowed[name].invoke(args))
+                result = execute_tool(name, args)
             except Exception as e:
                 result = f"[도구 실행 오류] {e}. 인자 형식을 확인하세요."
-        log += [f"[Function Call] {name}", f"[Parameters] {args}", f"[Output] {result[:700]}"]
+        log += [f"[Function Call] {name}" + (" (via MCP)" if config.TOOL_BACKEND == "mcp" else ""), f"[Parameters] {args}", f"[Output] {result[:700]}"]
         messages.append({"role": "tool", "tool_name": name, "content": result})
     return {"messages": messages, "calls": [], "log": log}
 
@@ -213,7 +235,7 @@ def after_agent(state: State):
     if calls and calls[0].get("name") == "__retry__":
         return "agent"
     if calls and state["steps"] < config.MAX_ITERS:
-        allowed = {t.name for t in AGENTS[state["active"]]["tools"]}
+        allowed = set(AGENTS[state["active"]]["tools"])
         gated = any(c.get("name") in NEED_CONFIRM and c.get("name") in allowed for c in calls)
         return "confirm" if gated else "tools"          # 권한 없는 도구는 확인 없이 tools 에서 거절된다
     if calls:                                                    # 반복 한도 초과

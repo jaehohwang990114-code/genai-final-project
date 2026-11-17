@@ -36,7 +36,7 @@ for q, want_route, want_tool in SCENARIOS:
         confirms += 1
         answer, log, pending = conv.process("응")
     route = next((l.split()[1] for l in log.splitlines() if l.startswith("[Router]")), "?")
-    called = [l.split("] ", 1)[1] for l in log.splitlines() if l.startswith("[Function Call]")]
+    called = [l.split("] ", 1)[1].split(" (via")[0] for l in log.splitlines() if l.startswith("[Function Call]")]
     ok = (want_route is None or route == want_route) and ((want_tool in called) if want_tool else not called or want_route is None)
     ok_count += ok
     print("=" * 80)
