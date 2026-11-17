@@ -1,0 +1,13 @@
+# 알바머니 도우미 전용 모델 (RTX 5070 Ti 16GB 기준)
+# 만들기: ollama create alba-agent -f ollama/Modelfile
+#
+# 기반 모델: qwen3:14b (약 9.3GB). 16GB VRAM 에 모델 + 문맥 8192 토큰이 들어간다.
+# 7개 시연 시나리오에서 도구 선택 7/7, 계산값 정확 (docs/모델비교.md 참고)
+# 시스템 프롬프트는 여기 넣지 않고 agent.py 에 둔다 → 코드에서 바로 고치고 설명하기 쉽게.
+FROM qwen3:14b
+
+# 0 = 같은 질문엔 항상 같은 답 (시연이 매번 똑같이 나오게)
+PARAMETER temperature 0
+
+# 한 번에 읽는 글 길이(토큰). RAG 문서 3개 + 도구 설명서 + 대화 기록이 잘리지 않게
+PARAMETER num_ctx 8192

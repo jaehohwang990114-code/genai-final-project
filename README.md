@@ -9,7 +9,7 @@
 | **RAG** | 주휴수당·최저임금·3.3% 세금·적금 기초·가상 상품 설명서·금융사기 문서를 검색해 답의 근거로 사용 | `rag.py`, `tools.search_guide` |
 | **도구 호출** | 알바비(기본급+주휴수당−3.3%) 계산, 적금 만기 계산, 조건에 맞는 적금 상품 비교 | `tools.py`, `agent.run_agent` |
 
-로컬 LLM: Ollama `qwen2.5:7b` (기본) 또는 `exaone3.5:7.8b` · 웹 데모: Gradio
+로컬 LLM: Ollama 전용 모델 `alba-agent` (qwen3:14b 기반, 기본) · 8GB GPU 는 `qwen2.5:7b` · 웹 데모: Gradio
 
 ## 구조
 ```
@@ -25,10 +25,19 @@ docs/              제안서, 시나리오, 보안·윤리, AI 활용 기록
 reference/         과제 안내 PDF, 3장 펑션 콜링 실습 노트북 (수업 자료 — 저장소를 공개로 바꾸기 전에 뺄 것)
 ```
 
+## 실행 방법 (Windows, 내 PC — 더블클릭)
+1. [Ollama](https://ollama.com)와 Python 3.10 이상을 설치한다.
+2. **`setup.bat`** 더블클릭 — 가상환경(.venv)·패키지 설치, 모델 받기(약 10GB), 전용 모델 `alba-agent` 만들기, 테스트까지 한 번에. (처음 한 번만)
+3. **`run.bat`** 더블클릭 — 브라우저에 `http://localhost:7860` 이 열린다. 끄려면 검은 창을 닫는다.
+
+전용 모델 `alba-agent` = qwen3:14b + temperature 0 + 문맥 8192 (`ollama/Modelfile`). VRAM 16GB 기준.
+8GB GPU 라면 run.bat 실행 전에 `set CHAT_MODEL=qwen2.5:7b`.
+
 ## 실행 방법 (GPU 서버)
 ```bash
-ollama pull qwen2.5:7b
+ollama pull qwen3:14b
 ollama pull bge-m3
+ollama create alba-agent -f ollama/Modelfile
 pip install -r requirements.txt
 python tests/test_offline.py      # LLM 없이 계산·검색 테스트
 python tests/run_scenarios.py     # 실제 모델로 시연 시나리오 7개 (결과 예: tests/scenario_result_qwen2.5.txt)

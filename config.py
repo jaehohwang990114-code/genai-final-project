@@ -6,9 +6,15 @@ import os
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
 # 도구 호출(tool calling)을 지원하는 모델이어야 한다.
-#   qwen2.5:7b   — 도구 호출이 안정적 (기본값)
-#   exaone3.5:7.8b — 한국어 말투가 자연스러움. 도구 호출이 불안정하면 qwen 으로 되돌린다.
-CHAT_MODEL = os.environ.get("CHAT_MODEL", "qwen2.5:7b")
+#   alba-agent     — qwen3:14b 기반 전용 모델 (ollama/Modelfile). RTX 5070 Ti 16GB 기준 기본값
+#   qwen2.5:7b     — VRAM 8GB 이하 GPU 용 (학교 서버가 작으면 이걸로)
+#   exaone3.5:7.8b — Ollama tools 미지원 → 글자 방식으로 우회. 비교용
+CHAT_MODEL = os.environ.get("CHAT_MODEL", "alba-agent")
+
+NUM_CTX = int(os.environ.get("NUM_CTX", "8192"))   # 모델이 한 번에 읽는 글 길이(토큰). 16GB 에서 14B + 8192 여유 있음
+
+# qwen3 계열은 답하기 전에 길게 '생각'하는 모드가 있다. False 로 꺼야 빠르다. 그 외 모델은 None(보내지 않음).
+THINK = False if CHAT_MODEL.startswith(("qwen3", "alba-agent")) else None
 
 # RAG 임베딩 모델. 없으면 rag.py 가 자동으로 '글자 겹침' 검색으로 바꿔 동작한다.
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")

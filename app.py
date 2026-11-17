@@ -79,4 +79,5 @@ if __name__ == "__main__":
             "model": config.CHAT_MODEL, "messages": [{"role": "user", "content": "안녕"}], "stream": False})
     except requests.exceptions.RequestException:
         pass
-    demo.launch(server_name="0.0.0.0", share="--share" in sys.argv)
+    demo.launch(server_name="0.0.0.0", share="--share" in sys.argv,
+                inbrowser="--open" in sys.argv)                # --open: 브라우저 자동으로 열기

@@ -53,7 +53,10 @@ TEXT_TOOL_MODE = False      # 모델이 Ollama 의 tools 기능을 지원하지 
 
 def _post_chat(messages, tools=None):
     payload = {"model": config.CHAT_MODEL, "messages": messages, "stream": False,
-               "options": {"temperature": 0}}                       # 0 = 같은 질문엔 같은 답 (시연 안정성)
+               "options": {"temperature": 0,                         # 0 = 같은 질문엔 같은 답 (시연 안정성)
+                           "num_ctx": config.NUM_CTX}}               # 문서·도구 설명이 잘리지 않게 문맥 길이 지정
+    if config.THINK is not None:
+        payload["think"] = config.THINK                              # qwen3 의 '생각 모드' 끄기 (느려지고 답이 길어짐)
     if tools:
         payload["tools"] = tools
     return requests.post(f"{config.OLLAMA_URL}/api/chat", json=payload, timeout=180)
@@ -94,6 +97,12 @@ def ollama_chat(messages, tools=None):
     return res.json()["message"]
 
 
+def _strip_think(msg):
+    """혹시 답에 <think>...</think> 생각 과정이 섞여 나오면 지운다 (사용자에게는 결론만)."""
+    msg["content"] = re.sub(r"<think>.*?</think>", "", msg.get("content") or "", flags=re.DOTALL).strip()
+    return msg
+
+
 # 실제 테스트에서 발견: qwen2.5 가 "검색해보겠습니다"라고만 쓰고 도구를 부르지 않고 끝내는 경우가 있었다.
 PROMISE_RE = re.compile(r"(검색|찾아|확인|계산)\s*(해\s*)?(보겠|볼게|하겠|할게)")
 
@@ -126,7 +135,7 @@ def run_agent(user_message, history=None, max_iters=config.MAX_ITERS, verbose=Fa
                + [{"role": "user", "content": user_message}]
     log, nudged = [], False
     for _ in range(max_iters):
-        msg = ollama_chat(messages, tools=TOOL_SCHEMAS)              # ① 요청(JSON) 또는 최종 답
+        msg = _strip_think(ollama_chat(messages, tools=TOOL_SCHEMAS))  # ① 요청(JSON) 또는 최종 답
         calls = get_tool_calls(msg)
         messages.append({"role": "assistant", "content": msg.get("content") or "",
                          **({"tool_calls": msg["tool_calls"]} if msg.get("tool_calls") else {})})
