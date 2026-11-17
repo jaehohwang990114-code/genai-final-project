@@ -3,11 +3,23 @@
 아르바이트하는 대학생이 **"이번 달 알바비가 맞게 들어왔나?"**와 **"남는 돈을 어디에 모을까?"**를 혼자 확인할 수 있게 돕는 AI 에이전트.
 로컬 LLM(Ollama)이 질문을 보고 도구를 골라 실행하고, 안내 문서를 근거로 답한다.
 
-## 사용한 기술 (2개)
+## 사용한 기술 (3개 + 멀티 에이전트)
 | 기술 | 프로젝트에서 하는 일 | 코드 |
 |---|---|---|
-| **RAG** | 주휴수당·최저임금·3.3% 세금·적금 기초·가상 상품 설명서·금융사기 문서를 검색해 답의 근거로 사용 | `rag.py`, `tools.search_guide` |
-| **도구 호출** | 알바비(기본급+주휴수당−3.3%) 계산, 적금 만기 계산, 조건에 맞는 적금 상품 비교 | `tools.py`, `agent.run_agent` |
+| **RAG** | 주휴수당·최저임금·3.3% 세금·적금 기초·재무 관리·가상 상품 설명서·금융사기 문서를 검색해 답의 근거로 사용 | `rag.py`, `tools.search_guide` |
+| **도구 호출** | 알바비(기본급+주휴수당−3.3%), 예산(50/30/20), 적금 만기 계산, 조건에 맞는 적금 상품 비교 | `tools.py` |
+| **LangGraph** | 라우터가 질문을 💼 머니 코치 / 🏦 상품 매칭 에이전트로 분기, 상품 비교 전 **사람 확인(interrupt)** | `graph.py` |
+
+**멀티 에이전트 흐름** (`graph.py`)
+```
+START → router ─┬─ 💼 머니 코치  (알바비·예산·재무 관리)   도구: calc_alba_pay, plan_budget, calc_savings, search_guide
+                ├─ 🏦 상품 매칭  (조건에 맞는 적금 순위)   도구: compare_savings_products, calc_savings, search_guide
+                └─ both: 머니 코치 → 상품 매칭
+각 에이전트: agent ⇄ tools  (상품 비교 요청이면 confirm ⏸ 사람 확인 후 실행)
+```
+**코드로 막는 안전장치(가드)**: 담당자별 도구 권한 · 사용자가 말하지 않은 금액으로 계산 금지 · 문서 없이 설명하면 되돌림 ·
+근거 없는 금액이 답에 나오면 한 번 고치게 하고, 그래도 남으면 그 줄 삭제 · 개인정보 가림.
+`python app.py --single` 로 예전 단일 에이전트(`agent.py`)도 실행할 수 있다.
 
 로컬 LLM: Ollama 전용 모델 `alba-agent` (qwen3:14b 기반, 기본) · 8GB GPU 는 `qwen2.5:7b` · 웹 데모: Gradio
 
@@ -15,9 +27,11 @@
 ```
 config.py          모델 이름, 최저시급, 세율 등 설정값
 rag.py             문서 → 청크 → 임베딩(bge-m3) → 코사인 검색 (임베딩 없으면 키워드 검색)
-tools.py           도구 4개 (search_guide, calc_alba_pay, calc_savings, compare_savings_products)
-agent.py           시스템 프롬프트 + 도구 호출 루프 + 대화 기억 + 개인정보 가림
-app.py             Gradio 화면 (왼쪽 상담 / 오른쪽 도구 실행 로그)
+tools.py           도구 5개 + 금액 검증 가드
+agent.py           단일 에이전트 루프, Ollama 호출, 개인정보 가림 (graph.py 가 부품으로 사용)
+graph.py           LangGraph 멀티 에이전트 (라우터 · 머니 코치 · 상품 매칭 · 사람 확인)
+app.py             Gradio 화면 (왼쪽 상담 / 오른쪽 실행 로그 / 확인 버튼)
+ui_theme.py        SF 네온 디자인 (CSS·헤더)
 data/docs/*.md     RAG 문서 (공공 안내 자료를 팀이 정리 + 가상 상품 설명서)
 data/products.json 가상 은행 적금·예금 상품 표
 tests/             LLM 없이 도는 테스트 (계산값·검색·개인정보·루프)

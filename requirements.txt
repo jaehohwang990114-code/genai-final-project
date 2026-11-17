@@ -2,3 +2,6 @@ gradio>=5.0
 langchain-core>=0.3
 numpy
 requests
+langgraph>=1.0
+# 최신 ormsgpack 1.13.1 은 Windows 스마트 앱 컨트롤이 DLL 을 차단해서 한 단계 낮은 버전으로 고정
+ormsgpack==1.13.0

@@ -161,4 +161,85 @@ def compare_savings_products(monthly_amount: int, months: int, age: Optional[int
     return "\n".join([head, "[가입 가능]"] + [r for _, r in rows] + (["[제외]"] + skipped if skipped else []))
 
 
-ALL_TOOLS = [search_guide, calc_alba_pay, calc_savings, compare_savings_products]
+# ── 도구 5 · 예산 짜기 ────────────────────────────────────────────
+@tool(parse_docstring=True)
+def plan_budget(monthly_income: int, fixed_costs: Optional[int] = None) -> str:
+    """한 달 수입(실수령 알바비)을 50/30/20 방법으로 나눠 필요 지출·자유 지출·저축 금액을 계산합니다.
+    고정비를 알려 주면 그 금액을 반영해 다시 나눕니다. 일반적인 예산 원칙 안내용입니다.
+
+    Args:
+        monthly_income: 한 달 실수령 수입(원). 예: 1040000
+        fixed_costs: 월세·통신비·교통비 같은 한 달 고정비 합계(원). 모르면 생략
+    """
+    if monthly_income <= 0:
+        return "한 달 수입은 0보다 커야 합니다. 먼저 calc_alba_pay 로 실수령액을 계산하거나 사용자에게 물어보세요."
+    need, want, save = monthly_income * 0.5, monthly_income * 0.3, monthly_income * 0.2
+    lines = [f"[50/30/20 기준] 수입 {_won(monthly_income)}",
+             f"- 필요 지출(50%) {_won(need)} · 자유 지출(30%) {_won(want)} · 저축·비상금(20%) {_won(save)}"]
+    if fixed_costs is not None:
+        if fixed_costs >= monthly_income:
+            lines.append(f"⚠ 고정비 {_won(fixed_costs)}이 수입 이상입니다. 고정비를 줄이거나 수입을 늘릴 방법부터 찾아야 합니다.")
+        elif fixed_costs > need:
+            want_adj = max(monthly_income - fixed_costs - save, 0)
+            lines.append(f"[고정비 반영] 고정비 {_won(fixed_costs)}이 50%를 넘습니다 → 저축 20% {_won(save)}을 먼저 지키면 "
+                         f"자유 지출은 {_won(want_adj)}으로 줄여야 합니다.")
+        else:
+            lines.append(f"[고정비 반영] 고정비 {_won(fixed_costs)} → 필요 지출 안에서 {_won(need - fixed_costs)}이 남습니다 "
+                         f"(식비·생필품 등).")
+    lines.append(f"[참고] 비상금 목표: 우선 1개월 생활비, 장기적으로 3~6개월치. 저축액 {_won(save)} 중 일부를 비상금 통장에.")
+    return "\n".join(lines)
+
+
+ALL_TOOLS = [search_guide, calc_alba_pay, calc_savings, compare_savings_products, plan_budget]
+
+
+# ── 값 지어내기 방지 가드 ─────────────────────────────────────────
+# 실제 테스트에서 발견: "한 달 알바비 얼마야?"(시급 없음)에 모델이 docstring 예시값(10320원, 20시간)을 넣어 계산했다.
+# → 프롬프트로 부탁하지 않고, 금액이 사용자가 실제로 말한 숫자인지 코드로 확인한다.
+import re as _re
+
+_AMOUNT_RE = _re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(만|천)?")
+
+
+def amounts_in(text):
+    """'10만원', '10,320원', '5천원' 같은 표현을 숫자 집합으로. {100000, 10320, 5000, ...}"""
+    out = set()
+    for num, unit in _AMOUNT_RE.findall(text or ""):
+        v = float(num.replace(",", ""))
+        out.add(int(v * {"만": 10000, "천": 1000}.get(unit, 1)))
+    return out
+
+
+_MONEY_RE = _re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(만|천)?\s*원")
+
+
+def money_in(text):
+    """'1,224,745원', '20만원' 처럼 '원'이 붙은 금액만 숫자 리스트로."""
+    return [int(float(n.replace(",", "")) * {"만": 10000, "천": 1000}.get(u, 1)) for n, u in _MONEY_RE.findall(text or "")]
+
+
+def unknown_money(answer, known_text):
+    """답변의 금액 중 근거(사용자 말·도구 결과)에 없는 것. 반올림('약 122만원')을 감안해 1% 차이까지는 같은 값으로 본다."""
+    known = set(money_in(known_text)) | amounts_in(known_text) | {config.MIN_WAGE}
+    return [v for v in money_in(answer)
+            if v >= 1000 and not any(abs(v - k) <= max(k * 0.01, 1) for k in known)]
+
+
+# 도구 이름 → 사용자가 반드시 말했어야 하는 금액 인자
+MUST_BE_SAID = {"calc_alba_pay": ["hourly_wage"], "calc_savings": ["monthly_amount"],
+                "plan_budget": ["monthly_income"]}
+
+
+def check_user_values(name, args, user_text, tool_text=""):
+    """금액 인자가 사용자 말(또는 앞선 도구 결과)에 있는 숫자인지 확인. 문제가 있으면 모델에게 돌려줄 문장."""
+    said = amounts_in(user_text) | amounts_in(tool_text)
+    for key in MUST_BE_SAID.get(name, []):
+        v = (args or {}).get(key)
+        if v is None:
+            continue
+        if key == "hourly_wage" and "최저" in user_text and int(v) == config.MIN_WAGE:
+            continue                                          # "최저시급으로" 라고 말한 경우
+        if int(v) not in said:
+            return (f"[실행 안 함] {key}={v} 는 사용자가 말한 값이 아닙니다. 값을 지어내지 말고 "
+                    f"사용자에게 직접 물어보세요.")
+    return None

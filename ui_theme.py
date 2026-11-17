@@ -214,6 +214,14 @@ footer { opacity: 0.35; }
 #clear-btn { background: rgba(10,18,40,0.7) !important; color: var(--neon-pink) !important;
   border: 1px solid rgba(255,43,214,0.55) !important; box-shadow: 0 0 12px rgba(255,43,214,0.25) !important; }
 #send-btn:hover, #clear-btn:hover { transform: translateY(-2px); }
+/* 사람 확인 버튼 — LangGraph 가 확인을 기다릴 때만 나타난다 */
+#confirm-btn {
+  border-radius: 12px !important; font-family: 'Orbitron', 'Noto Sans KR', sans-serif !important; font-weight: 700 !important;
+  letter-spacing: 0.1em; color: #031a0d !important; border: none !important;
+  background: linear-gradient(90deg, #3dff9a, #22e6ff) !important;
+  box-shadow: 0 0 20px rgba(61,255,154,0.6) !important; animation: pulse-glow 1.4s ease-in-out infinite;
+}
+@keyframes pulse-glow { 50% { box-shadow: 0 0 34px rgba(61,255,154,0.95), 0 0 60px rgba(34,230,255,0.4); } }
 #send-btn::after {
   content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
   background: linear-gradient(100deg, transparent, rgba(255,255,255,0.7), transparent);
