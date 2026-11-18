@@ -84,6 +84,7 @@ ROUTER_PROMPT = """질문을 담당할 곳을 골라 한 단어로만 답하세�
 - both    : 수입(시급·월급)이나 생활비를 보고 '얼마를 저축할지'부터 계산해야 하고, 그다음 상품까지 물을 때만
 답은 coach, matcher, both 중 하나만 쓰세요."""
 
+REPORT_WORDS = re.compile(r"리포트|보고서|레포트|월간\s*재무|재무\s*정리|한\s*달\s*정리")
 MATCH_WORDS = re.compile(r"적금|예금|상품|은행|금리|우대|중도해지|위약금|만기")
 # 문서 근거가 필요한 '설명형' 질문 (이런 질문인데 도구 없이 답하면 한 번 되돌린다)
 DOC_WORDS = re.compile(r"관리|방법|비상금|통장|조건|제도|주의|어떻게|왜|위약금|중도해지|우대|퇴직금|근로계약|가산|사기")
@@ -103,11 +104,16 @@ class State(TypedDict, total=False):
     steps: int             # 지금 에이전트의 반복 횟수 (무한 루프 방지)
     nudged: bool           # "검색해 볼게요"만 하고 멈춘 경우 재촉했는지
     money_checked: bool    # 근거 없는 금액 가드를 이미 한 번 썼는지
+    report_params: dict    # 📊 리포트 입력값 (시급·주 근무시간·고정비·나이 …)
 
 
 # ── 노드 ───────────────────────────────────────────────────────────
 def router(state: State):
-    """① 질문을 보고 담당 에이전트를 고른다. 모델 답이 이상하면 키워드로 보정."""
+    """① 질문을 보고 담당 에이전트를 고른다. 모델 답이 이상하면 키워드로 보정.
+    '월간 리포트' 요청은 키워드로 바로 report 로 보낸다 (CrewAI 팀은 이때만 일한다)."""
+    if REPORT_WORDS.search(state["question"]):
+        return {"route": "report", "queue": [], "answers": [],
+                "log": state.get("log", []) + ["[Router] report (키워드) → 📊 월간 리포트 (CrewAI 팀)"]}
     recent = state.get("history", [])[-4:]
     msg = agent._strip_think(agent.ollama_chat(
         [{"role": "system", "content": ROUTER_PROMPT}] + recent + [{"role": "user", "content": state["question"]}]))
@@ -259,6 +265,73 @@ def finish(state: State):
     return {}
 
 
+# ── 📊 월간 리포트 갈림길 (CrewAI) ───────────────────────────────────
+def _last(pattern, text, cast=int):
+    """text 에서 pattern 의 마지막 일치를 숫자로 ('만/천' 단위 처리). 없으면 None."""
+    found = list(re.finditer(pattern, text))
+    if not found:
+        return None
+    g = found[-1].groupdict()
+    v = float(g["n"].replace(",", "")) * {"만": 10000, "천": 1000}.get(g.get("u") or "", 1)
+    return cast(v)
+
+
+def extract_report_params(text):
+    """대화 글에서 리포트 입력값을 정규식으로 찾는다. 모델에게 맡기지 않는다 (값 지어내기 방지)."""
+    p = {"hourly_wage": _last(r"시급\s*(?P<n>\d[\d,]*)\s*(?P<u>만|천)?\s*원", text),
+         "hours_per_week": _last(r"주\s*(?P<n>\d+(?:\.\d+)?)\s*시간", text, float),
+         "fixed_costs": _last(r"(?:고정비|월세)\s*(?:가|는|은)?\s*(?P<n>\d[\d,]*)\s*(?P<u>만|천)?\s*원", text),
+         "age": _last(r"(?:만\s*)?(?P<n>\d{2})\s*(?:살|세)", text),
+         "months": _last(r"(?P<n>6|12|24)\s*개월", text),
+         "tax_33": bool(re.search(r"3\.3|떼고|떼|공제", text))}
+    day, days = _last(r"하루\s*(?P<n>\d+(?:\.\d+)?)\s*시간", text, float), _last(r"주\s*(?P<n>\d)\s*일", text)
+    if p["hours_per_week"] is None and day and days:             # "하루 4시간, 주 5일" → 20시간
+        p["hours_per_week"] = day * days
+    return p
+
+
+def report_plan(state: State):
+    """📊 ① 리포트에 필요한 값을 대화에서 모은다. 빠졌으면 되묻고 끝낸다."""
+    text = " ".join([m["content"] for m in state.get("history", []) if m["role"] == "user"] + [state["question"]])
+    p = extract_report_params(text)
+    missing = [name for key, name in (("hourly_wage", "시급"), ("hours_per_week", "주 근무시간")) if not p[key]]
+    log = state["log"] + [f"[Report] 찾은 값: { {k: v for k, v in p.items() if v} }"]
+    if missing:
+        ask = (f"📊 월간 재무 리포트를 만들려면 **{', '.join(missing)}**이 필요해요.\n"
+               "예) 시급 10320원, 주 20시간, 월세 40만원, 23살 (고정비·나이는 선택)")
+        return {"report_params": None, "answers": [["📊 월간 리포트", ask]], "log": log + ["[Report] 값 부족 → 되묻기"]}
+    return {"report_params": p, "log": log}
+
+
+def report_confirm(state: State):
+    """📊 ② 사람 확인 — 1분쯤 걸리는 작업이라 조건을 보여 주고 승인받는다."""
+    decision = interrupt({"kind": "report", "args": state["report_params"]})
+    if decision.get("ok"):
+        return {"log": state["log"] + ["[확인] 리포트 조건 승인 → CrewAI 팀 실행"]}
+    # 수정: 고친 내용을 질문 뒤에 붙여 다시 값을 찾는다
+    return {"question": state["question"] + " " + decision.get("text", ""), "report_params": None,
+            "log": state["log"] + [f"[수정] {decision.get('text', '')}"]}
+
+
+def report_run(state: State):
+    """📊 ③ CrewAI 팀(분석가 → 리서처 → 검토자)이 리포트를 쓴다. 도구는 같은 MCP 서버."""
+    import crew_report                                        # CrewAI 는 무거워서 리포트를 요청할 때만 불러온다
+    text, crew_log = crew_report.run_report(state["report_params"])
+    return {"answers": [["📊 월간 리포트", text]], "log": state["log"] + crew_log + ["[Report] 완료"]}
+
+
+def after_router(state: State):
+    return "report_plan" if state["route"] == "report" else "start_agent"
+
+
+def after_report_plan(state: State):
+    return "report_confirm" if state.get("report_params") else END
+
+
+def after_report_confirm(state: State):
+    return "report_run" if state.get("report_params") else "report_plan"
+
+
 def build_graph():
     g = StateGraph(State)
     g.add_node("router", router)
@@ -267,8 +340,14 @@ def build_graph():
     g.add_node("confirm", confirm)
     g.add_node("tools", run_tools)
     g.add_node("next", finish)
+    g.add_node("report_plan", report_plan)
+    g.add_node("report_confirm", report_confirm)
+    g.add_node("report_run", report_run)
     g.add_edge(START, "router")
-    g.add_edge("router", "start_agent")
+    g.add_conditional_edges("router", after_router, ["start_agent", "report_plan"])
+    g.add_conditional_edges("report_plan", after_report_plan, ["report_confirm", END])
+    g.add_conditional_edges("report_confirm", after_report_confirm, ["report_run", "report_plan"])
+    g.add_edge("report_run", END)
     g.add_edge("start_agent", "agent")
     g.add_conditional_edges("agent", after_agent, ["agent", "confirm", "tools", "next"])
     g.add_conditional_edges("confirm", after_confirm, ["tools", "agent"])
@@ -324,9 +403,19 @@ class GraphConversation:
         if interrupts:                                              # ⏸ 사람 확인 대기
             self.pending = True
             info = interrupts[0].value
-            answer = (f"🏦 상품 매칭: 이 조건으로 가상 적금 상품을 비교할까요?\n\n"
-                      f"**{describe_args(info.get('args'))}**\n\n"
-                      f"맞으면 **확인** 버튼이나 '응', 다르면 바꿀 조건을 적어 주세요. (예: 월 5만원으로)")
+            if info.get("kind") == "report":
+                a = info["args"]
+                cond = [f"시급 {a['hourly_wage']:,}원", f"주 {a['hours_per_week']:g}시간",
+                        f"고정비 {a['fixed_costs']:,}원" if a.get("fixed_costs") else "고정비 없음",
+                        f"만 {a['age']}세" if a.get("age") else "나이 모름",
+                        "3.3% 공제" if a.get("tax_33") else "공제 없음", f"적금 {a.get('months') or 12}개월"]
+                answer = (f"📊 이 조건으로 **월간 재무 리포트**를 만들까요? (CrewAI 팀 3명이 작업 · 1~2분)\n\n"
+                          f"**{' · '.join(cond)}**\n\n"
+                          f"맞으면 **확인** 버튼이나 '응', 다르면 바꿀 내용을 적어 주세요. (예: 월세 50만원)")
+            else:
+                answer = (f"🏦 상품 매칭: 이 조건으로 가상 적금 상품을 비교할까요?\n\n"
+                          f"**{describe_args(info.get('args'))}**\n\n"
+                          f"맞으면 **확인** 버튼이나 '응', 다르면 바꿀 조건을 적어 주세요. (예: 월 5만원으로)")
             return warn + answer, "\n".join(log + ["[⏸ 대기] 사용자 확인을 기다리는 중"]), True
 
         self.pending = False

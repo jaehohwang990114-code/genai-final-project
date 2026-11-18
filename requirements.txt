@@ -7,3 +7,7 @@ langgraph>=1.0
 ormsgpack==1.13.0
 # MCP: 수업(9장)과 같은 FastMCP 방식을 쓰려고 1.x 로 고정 (2.x 는 API 가 바뀜)
 mcp>=1.10,<2
+# CrewAI: 월간 재무 리포트(에이전트 3명). 없거나 실패해도 리포트만 안 되고 나머지는 동작
+crewai>=1.0
+# 최신 pyarrow 26.0.1 은 스마트 앱 컨트롤이 DLL 을 차단해서(→ Gradio 까지 안 열림) 한 단계 낮은 버전으로 고정
+pyarrow==26.0.0

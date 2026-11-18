@@ -24,6 +24,7 @@ EXAMPLES = [
     "매달 10만원씩 12개월 적금 넣으려면 어떤 상품이 있어? 나 22살이야",
     "주휴수당은 어떤 조건이면 받을 수 있어?",
     "월 100만원 버는데 월세가 50만원이야. 얼마 저축하고 어떤 적금이 맞을까? 나 23살",   # 두 에이전트 연결
+    "이번 달 재무 리포트 만들어줘. 시급 10320원, 주 20시간, 월세 40만원, 23살",        # CrewAI 팀 리포트
     # 예외
     "한 달 알바비 얼마야?",                                   # 값 부족 → 되물어야 함
     "시급 9000원에 주 10시간이면?",                            # 최저임금 미달 + 주휴수당 없음
@@ -61,7 +62,7 @@ def ui_send(message, chat_history, conv):
 
 
 def ui_confirm(chat_history, conv):
-    return ui_send("응, 이 조건으로 비교해줘", chat_history, conv)
+    return ui_send("응, 이 조건으로 진행해줘", chat_history, conv)
 
 
 def ui_clear(conv):
@@ -80,12 +81,12 @@ with gr.Blocks(title="ALBA·MONEY — 알바머니 도우미") as demo:     # �
                                  placeholder="<div style='text-align:center;opacity:.7'>⟡ 알바비나 적금에 대해 물어보세요 ⟡</div>")
             msg = gr.Textbox(label="질문", show_label=False, elem_id="prompt",
                              placeholder="▸ 예) 시급 10320원에 주 20시간 일하면 한 달에 얼마야?")
-            confirm_btn = gr.Button("✅ CONFIRM · 이 조건으로 비교", visible=False, elem_id="confirm-btn")
+            confirm_btn = gr.Button("✅ CONFIRM · 이 조건으로 진행", visible=False, elem_id="confirm-btn")
             with gr.Row():
                 send = gr.Button("TRANSMIT ▸ 보내기", variant="primary", elem_id="send-btn")
                 clear = gr.Button("RESET · 초기화", elem_id="clear-btn")
             with gr.Group(elem_id="examples"):
-                gr.Examples(EXAMPLES, inputs=msg, label="시연용 예시 (위 4개 정상 · 아래 4개 예외)")
+                gr.Examples(EXAMPLES, inputs=msg, label="시연용 예시 (위 5개 정상 · 아래 4개 예외)")
         with gr.Column(scale=2, elem_classes="hud-panel"):
             gr.HTML('<div class="hud-panel-title pink">◆ SYSTEM LOG · 도구 실행 기록</div>')
             log_box = gr.Textbox(label="실행 로그", show_label=False, lines=28, elem_id="syslog",

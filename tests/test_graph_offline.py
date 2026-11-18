@@ -91,6 +91,40 @@ def test_money_guard_strips_second_time():
     assert "200,000원" in answer and "2,470,000" not in answer and "줄 1개 삭제" in log
 
 
+def _fake_crew(calls):
+    """CrewAI 대신 받은 입력만 기록하는 가짜 리포트 모듈."""
+    import types
+    mod = types.ModuleType("crew_report")
+    mod.run_report = lambda p: (calls.append(p) or "## 1. 이번 달 수입\n- 총 수입: 1,076,228원", ["[Crew Tool] 가짜"])
+    sys.modules["crew_report"] = mod
+
+
+def test_report_asks_missing_values():
+    calls = []
+    _fake_crew(calls)
+    out = run([], "이번 달 재무 리포트 만들어줘")                  # 모델 호출 없이 키워드로 report
+    answer, log, pending = out[0]
+    assert not pending and "시급, 주 근무시간" in answer and not calls
+
+
+def test_report_confirm_then_crew():
+    calls = []
+    _fake_crew(calls)
+    out = run([], "월간 리포트 만들어줘. 시급 10320원, 주 20시간, 월세 40만원, 23살", "응")
+    (a1, _, p1), (a2, log2, p2) = out
+    assert p1 and "시급 10,320원 · 주 20시간 · 고정비 400,000원 · 만 23세" in a1
+    assert not p2 and "1,076,228" in a2 and "[Report] 완료" in log2
+    assert calls[0]["hourly_wage"] == 10320 and calls[0]["fixed_costs"] == 400000
+
+
+def test_report_correction():
+    calls = []
+    _fake_crew(calls)
+    out = run([], "리포트 만들어줘 시급 10320원 주 20시간", "월세 50만원", "응")
+    assert out[0][2] and out[1][2] and "고정비 500,000원" in out[1][0]
+    assert calls[0]["fixed_costs"] == 500000
+
+
 def test_tool_permission():
     """머니 코치가 상품 비교 도구를 부르면 코드가 막는다."""
     out = run([say("coach"), call("compare_savings_products", monthly_amount=1, months=12), say("담당이 아니에요.")],
