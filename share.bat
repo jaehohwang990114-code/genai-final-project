@@ -3,6 +3,7 @@ chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 set PYTHONUTF8=1
+set PYTHONUNBUFFERED=1
 title 알바머니 도우미 - 인터넷 공유 중 (이 창을 닫으면 공개 주소가 꺼집니다)
 
 if not exist ".venv\Scripts\python.exe" (
@@ -42,7 +43,9 @@ if /i "%~1"=="lock" (
 )
 
 rem ── 앱은 작은 창에서 실행 (그 창도 이 창과 함께 닫아 주세요) ──
-start "알바머니 앱 (공유 끝나면 닫기)" /min ".venv\Scripts\python.exe" app.py %LOCK%
+rem    앱 출력은 logs\share_app.log 에 남긴다 → 앱이 꺼지면 원인을 볼 수 있게
+if not exist logs mkdir logs
+start "알바머니 앱 (공유 끝나면 닫기)" /min cmd /c ""%CD%\.venv\Scripts\python.exe" app.py %LOCK% > logs\share_app.log 2>&1"
 
 echo.
 echo ============================================================
@@ -57,6 +60,23 @@ echo   주소는 믿을 수 있는 사람에게만 보내세요. 질문하면 �
 echo   다 쓰면 이 창과 작은 앱 창을 모두 닫으세요.
 echo ============================================================
 echo.
-timeout /t 15 /nobreak >nul
-"%CF%" tunnel --no-autoupdate --url http://localhost:7870
+rem ── 앱이 실제로 응답할 때까지 기다린 뒤에 공개 주소를 만든다 ──
+rem    (모델을 GPU 에 올리는 동안 주소부터 열면 Cloudflare 502 '호스트 오류'가 뜸)
+echo 앱 준비 중... (모델을 GPU 에 올리는 중, 보통 20~60초)
+set /a WAIT=0
+:wait_app
+curl -s -o nul http://127.0.0.1:7870 && goto app_ready
+set /a WAIT+=2
+if %WAIT% GEQ 180 (
+    echo [오류] 3분이 지나도 앱이 켜지지 않았어요. logs\share_app.log 의 오류 메시지를 확인하세요.
+    pause
+    exit /b 1
+)
+timeout /t 2 /nobreak >nul
+goto wait_app
+:app_ready
+echo 앱 준비 완료 (%WAIT%초). 공개 주소를 만듭니다 — 아래 https://....trycloudflare.com 이 나오면 바로 접속하세요.
+echo.
+rem localhost 는 IPv6(::1) 로 먼저 접속하다 거부될 수 있어 127.0.0.1 로 고정
+"%CF%" tunnel --no-autoupdate --url http://127.0.0.1:7870
 pause
