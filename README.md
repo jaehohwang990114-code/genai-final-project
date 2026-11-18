@@ -60,9 +60,10 @@ docs/              제안서, 시나리오, 보안·윤리, AI 활용 기록
 8GB GPU 라면 run.bat 실행 전에 `set CHAT_MODEL=qwen2.5:7b`.
 
 ### 인터넷으로 공유하기 (휴대폰·팀원·교수님)
-**`share.bat`** 더블클릭 → 창에 아이디(`alba`)·비밀번호와 `https://....trycloudflare.com` 주소가 나온다.
+**`share.bat`** 더블클릭 → 창에 `https://....trycloudflare.com` 주소가 나온다 (로그인 없이 바로 사용).
+- 비밀번호를 걸려면 명령창에서 `share.bat lock` → 아이디 `alba` + 실행할 때마다 바뀌는 비밀번호.
 - Cloudflare 임시 터널을 쓴다 (계정 불필요, 처음 한 번 `winget install --id Cloudflare.cloudflared`).
-- 실행할 때마다 비밀번호가 새로 바뀌고 주소도 바뀐다. 창을 닫으면 주소가 사라진다.
+- 실행할 때마다 주소가 바뀐다. 창을 닫으면 주소가 사라진다. 주소는 믿을 수 있는 사람에게만.
 - 접속한 사람마다 대화 기억이 따로 관리된다 (`gr.State`).
 - Gradio 기본 공유(`--share`, *.gradio.live)는 Windows 스마트 앱 컨트롤이 켜진 PC에서 막혀서 이 방식을 쓴다.
 

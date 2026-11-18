@@ -31,20 +31,29 @@ where ollama >nul 2>&1 || set "OLLAMA=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
 
 if "%CHAT_MODEL%"=="" set CHAT_MODEL=alba-agent
 
-rem ── 실행할 때마다 새 비밀번호 ──
-set APP_PASSWORD=alba%RANDOM%%RANDOM%
 rem run.bat(7860) 과 겹치지 않게 공유용 앱은 7870 포트로
 set GRADIO_SERVER_PORT=7870
 
-rem ── 앱은 작은 창에서 비밀번호 잠금으로 실행 (그 창도 이 창과 함께 닫아 주세요) ──
-start "알바머니 앱 (공유 끝나면 닫기)" /min ".venv\Scripts\python.exe" app.py --lock
+rem ── 기본: 로그인 없이 공유 / "share.bat lock" 으로 실행하면 비밀번호 잠금 ──
+set "LOCK="
+if /i "%~1"=="lock" (
+    set "LOCK=--lock"
+    set "APP_PASSWORD=alba%RANDOM%%RANDOM%"
+)
+
+rem ── 앱은 작은 창에서 실행 (그 창도 이 창과 함께 닫아 주세요) ──
+start "알바머니 앱 (공유 끝나면 닫기)" /min ".venv\Scripts\python.exe" app.py %LOCK%
 
 echo.
 echo ============================================================
-echo   접속 아이디: alba     비밀번호: %APP_PASSWORD%
+if defined LOCK (
+    echo   접속 아이디: alba     비밀번호: %APP_PASSWORD%
+) else (
+    echo   로그인 없이 열립니다. 주소를 아는 사람은 누구나 쓸 수 있어요.
+    echo   비밀번호를 걸려면 이 창을 닫고 "share.bat lock" 으로 실행하세요.
+)
 echo   잠시 후 아래에 https://....trycloudflare.com 주소가 나옵니다.
-echo   그 주소를 휴대폰이나 다른 컴퓨터에서 열고 위 아이디/비밀번호로 로그인하세요.
-echo   주소와 비밀번호를 아는 사람은 이 PC 의 GPU 로 질문할 수 있어요.
+echo   주소는 믿을 수 있는 사람에게만 보내세요. 질문하면 이 PC 의 GPU 를 씁니다.
 echo   다 쓰면 이 창과 작은 앱 창을 모두 닫으세요.
 echo ============================================================
 echo.
