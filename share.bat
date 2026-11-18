@@ -45,7 +45,8 @@ if /i "%~1"=="lock" (
 rem ── 앱은 작은 창에서 실행 (그 창도 이 창과 함께 닫아 주세요) ──
 rem    앱 출력은 logs\share_app.log 에 남긴다 → 앱이 꺼지면 원인을 볼 수 있게
 if not exist logs mkdir logs
-start "알바머니 앱 (공유 끝나면 닫기)" /min cmd /c ""%CD%\.venv\Scripts\python.exe" app.py %LOCK% > logs\share_app.log 2>&1"
+echo ===== %DATE% %TIME% 공유 시작 ===== >> logs\share_app.log
+start "알바머니 앱 (공유 끝나면 닫기)" /min cmd /c ""%CD%\.venv\Scripts\python.exe" app.py %LOCK% >> logs\share_app.log 2>&1"
 
 echo.
 echo ============================================================
@@ -78,5 +79,6 @@ goto wait_app
 echo 앱 준비 완료 (%WAIT%초). 공개 주소를 만듭니다 — 아래 https://....trycloudflare.com 이 나오면 바로 접속하세요.
 echo.
 rem localhost 는 IPv6(::1) 로 먼저 접속하다 거부될 수 있어 127.0.0.1 로 고정
-"%CF%" tunnel --no-autoupdate --url http://127.0.0.1:7870
+rem QUIC 방식은 실시간 진행 표시(SSE)를 모아서 보내는 경우가 있어 http2 로 고정
+"%CF%" tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:7870
 pause

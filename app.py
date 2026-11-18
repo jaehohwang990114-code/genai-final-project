@@ -8,6 +8,7 @@
 import os
 import secrets
 import sys
+import threading
 
 import gradio as gr
 import requests
@@ -48,21 +49,38 @@ def ui_send(message, chat_history, conv):
     """conv 는 접속한 사람마다 따로 있는 대화 기억 (gr.State). 여러 명이 동시에 써도 대화가 안 섞인다.
     LangGraph 가 '사람 확인'을 기다리면 pending=True → 확인 버튼을 보여 준다."""
     if not message.strip():
-        return "", chat_history, gr.update(), gr.update()
-    pending = False
-    try:
-        result = conv.process(message)
-        answer, log = result[0], result[1]
-        pending = len(result) > 2 and result[2]
-    except requests.exceptions.RequestException as e:
-        answer, log = "로컬 LLM 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.", f"[연결 오류] {e}"
-    chat_history = (chat_history or []) + [{"role": "user", "content": message},
-                                           {"role": "assistant", "content": answer}]
-    return "", chat_history, log, gr.update(visible=pending)
+        yield "", chat_history, gr.update(), gr.update()
+        return
+    history = (chat_history or []) + [{"role": "user", "content": message}]
+    yield "", history + [{"role": "assistant", "content": "⏳ 처리 중…"}], gr.update(), gr.update(visible=False)
+
+    # 처리는 별도 스레드에서 → 기다리는 동안 리포트 진행 문구(분석가 완료 등)를 0.5초마다 화면에 보여 준다
+    box = {}
+
+    def work():
+        try:
+            box["result"] = conv.process(message)
+        except requests.exceptions.RequestException as e:
+            box["result"] = ("로컬 LLM 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.", f"[연결 오류] {e}", False)
+
+    worker = threading.Thread(target=work, daemon=True)
+    worker.start()
+    shown = []
+    while worker.is_alive():
+        worker.join(0.5)
+        steps = conv.progress() if hasattr(conv, "progress") else []
+        if steps != shown:
+            shown = steps
+            text = "📊 **월간 리포트 작성 중…**\n\n" + "\n".join(f"- {s}" for s in steps)
+            yield "", history + [{"role": "assistant", "content": text}], gr.update(), gr.update()
+
+    answer, log = box["result"][0], box["result"][1]
+    pending = len(box["result"]) > 2 and box["result"][2]
+    yield "", history + [{"role": "assistant", "content": answer}], log, gr.update(visible=pending)
 
 
 def ui_confirm(chat_history, conv):
-    return ui_send("응, 이 조건으로 진행해줘", chat_history, conv)
+    yield from ui_send("응, 이 조건으로 진행해줘", chat_history, conv)
 
 
 def ui_clear(conv):
@@ -104,6 +122,20 @@ if __name__ == "__main__":
             "model": config.CHAT_MODEL, "messages": [{"role": "user", "content": "안녕"}], "stream": False})
     except requests.exceptions.RequestException:
         pass
+
+    def preload():
+        """무거운 것들을 앱이 뜨는 동안 미리 준비 → 첫 질문·첫 리포트가 느리지 않게.
+        MCP 서버 켜기 + 문서 임베딩, CrewAI 불러오기(수십 초)."""
+        try:
+            if config.TOOL_BACKEND == "mcp":
+                from mcp_client import get_client
+                get_client().call_tool("search_guide", {"query": "주휴수당"})
+            import crew_report  # noqa: F401
+            print("[준비] MCP 서버·CrewAI 미리 불러오기 완료")
+        except Exception as e:
+            print(f"[준비] 미리 불러오기 실패(첫 사용 때 다시 시도): {e.__class__.__name__}")
+
+    threading.Thread(target=preload, daemon=True).start()
     share = "--share" in sys.argv                            # Gradio 공개 주소 (리눅스 GPU 서버용)
     auth = None
     if share or "--lock" in sys.argv:                        # 공개 주소는 누구나 들어올 수 있으니 비밀번호로 잠근다

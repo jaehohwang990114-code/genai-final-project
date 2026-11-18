@@ -14,6 +14,7 @@ import uuid
 from datetime import date
 from typing import TypedDict
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -313,10 +314,14 @@ def report_confirm(state: State):
             "log": state["log"] + [f"[수정] {decision.get('text', '')}"]}
 
 
-def report_run(state: State):
-    """📊 ③ CrewAI 팀(분석가 → 리서처 → 검토자)이 리포트를 쓴다. 도구는 같은 MCP 서버."""
-    import crew_report                                        # CrewAI 는 무거워서 리포트를 요청할 때만 불러온다
-    text, crew_log = crew_report.run_report(state["report_params"])
+PROGRESS = {}          # thread_id → 진행 문구 리스트. 화면(app.py)이 리포트를 기다리는 동안 읽어서 보여 준다
+
+
+def report_run(state: State, config: RunnableConfig):
+    """📊 ③ CrewAI 팀(분석가 → 리서처 → 검토자)이 리포트를 쓴다. 숫자는 MCP 서버가 미리 계산."""
+    import crew_report                                        # 무거워서 처음 필요할 때 불러온다 (앱 시작 때 미리 불러 둠)
+    steps = PROGRESS.setdefault(config["configurable"]["thread_id"], [])
+    text, crew_log = crew_report.run_report(state["report_params"], on_step=steps.append)
     return {"answers": [["📊 월간 리포트", text]], "log": state["log"] + crew_log + ["[Report] 완료"]}
 
 
@@ -382,11 +387,16 @@ class GraphConversation:
 
     @property
     def cfg(self):
-        return {"configurable": {"thread_id": self.thread_id}}
-
-    def process(self, message):
         if self.thread_id is None:
             self.thread_id = str(uuid.uuid4())
+        return {"configurable": {"thread_id": self.thread_id}}
+
+    def progress(self):
+        """리포트 작성 중 진행 문구 (화면이 기다리는 동안 0.5초마다 읽는다)."""
+        return list(PROGRESS.get(self.cfg["configurable"]["thread_id"], []))
+
+    def process(self, message):
+        PROGRESS.pop(self.cfg["configurable"]["thread_id"], None)   # 새 요청마다 진행 문구 초기화
         safe, n_masked = agent.mask_pii(message)
         warn = "⚠ 계좌번호·주민번호 같은 개인정보는 입력하지 마세요. 가린 뒤 처리했어요.\n\n" if n_masked else ""
         if self.pending:                                           # 확인 질문에 대한 대답이면 → 멈춘 곳부터 이어서

@@ -95,7 +95,7 @@ def _fake_crew(calls):
     """CrewAI 대신 받은 입력만 기록하는 가짜 리포트 모듈."""
     import types
     mod = types.ModuleType("crew_report")
-    mod.run_report = lambda p: (calls.append(p) or "## 1. 이번 달 수입\n- 총 수입: 1,076,228원", ["[Crew Tool] 가짜"])
+    mod.run_report = lambda p, on_step=None: (calls.append(p) or "## 1. 이번 달 수입\n- 총 수입: 1,076,228원", ["[Crew Tool] 가짜"])
     sys.modules["crew_report"] = mod
 
 
